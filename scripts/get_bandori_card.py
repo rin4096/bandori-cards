@@ -27,7 +27,6 @@ def get_all_members():
             members.extend(data.get('results', []))
             url = data.get('next')
         except Exception as e:
-            # print(f"Error fetching members: {e}", file=sys.stderr)
             break
     return members
 
@@ -77,14 +76,10 @@ def search_cards(query_terms, member_ids=None, rarity=None):
     cards = []
     url = CARD_API
     
-    # We will search specifically by search keyword
-    # The API 'search' parameter is the most reliable for finding cards by name
     params = {'page_size': 100}
     if query_terms:
-        # Prioritize the "Sanrio" or similar keyword for the API search
         params['search'] = query_terms[0]
     elif member_ids:
-        # Fallback to member-based API search if no other terms
         params['member'] = member_ids[0]
 
     pages_to_fetch = 10 
@@ -98,15 +93,12 @@ def search_cards(query_terms, member_ids=None, rarity=None):
             results = data.get('results', [])
             
             for card in results:
-                # 1. Member Filter (Local)
                 if member_ids and card.get('member') not in member_ids:
                     continue
                 
-                # 2. Rarity Filter
                 if rarity and str(card.get('i_rarity')) != str(rarity):
                     continue
 
-                # 3. Composite Keyword matching (Local)
                 card_name = (card.get('name') or "").lower()
                 card_jp = (card.get('japanese_name') or "").lower()
                 
@@ -140,16 +132,12 @@ def main():
         parser.print_help()
         return
 
-    # 1. Build member maps
     members_data = get_all_members()
     id_map, name_map = build_member_maps(members_data)
     
-    # 2. Identify member vs search terms
     member_ids = []
     remaining_terms = []
     
-    # We'll use a simpler heuristic: if a word matches a member, it's a member ID filter.
-    # Otherwise, it's a card name keyword.
     for q in args.query:
         ql = q.lower()
         if ql in name_map:
@@ -162,18 +150,7 @@ def main():
         if m_id:
             member_ids.append(m_id)
 
-    # 3. Fetch cards
     cards = search_cards(remaining_terms, member_ids=member_ids if member_ids else None, rarity=args.rarity)
-
-    if not cards:
-        # Final fallback: if no cards found with composite, try searching ONLY member or ONLY keyword
-        if member_ids and remaining_terms:
-             # Try just the keyword
-             cards = search_cards(remaining_terms, member_ids=None, rarity=args.rarity)
-             # Then filter by member name string in card name as a hail mary
-             if cards:
-                 # Filter by member name if possible
-                 pass 
 
     if not cards:
         print("No cards found matching your query.")
@@ -184,8 +161,8 @@ def main():
     for card in cards[:5]:
         member = id_map.get(card.get('member'), {})
         member_name = member.get('name', 'Unknown')
+        band_name = member.get('i_band', 'N/A')
         
-        # Priority: art_trained > art > transparent_trained > transparent > image_trained > image
         links_to_check = {
             "Art (Trained)": card.get('art_trained'),
             "Art (Normal)": card.get('art'),
@@ -204,26 +181,17 @@ def main():
                 if res:
                     valid_links[label] = res
 
-        # Output
         rarity_stars = "★" * card.get('i_rarity', 0)
-        print(f"【 {rarity_stars} {card.get('name') or 'No Title'} 】")
-        print(f"Character: {member_name} ({member.get('i_band', 'N/A')})")
+        card_title = card.get('japanese_name') or card.get('name') or 'No Title'
+        print(f"【 {rarity_stars} {card_title} 】")
+        print(f"Character: {member_name} ({band_name})")
         print(f"Attribute: {card.get('i_attribute', 'N/A')}")
+        print(f"Detail Link: https://bandori.party/card/{card['id']}/")
         
         priority_order = ["Art (Trained)", "Art (Normal)", "Transparent (Trained)", "Transparent (Normal)", "Image (Trained)", "Image (Normal)"]
-        found_any = False
         for label in priority_order:
             if label in valid_links:
                 print(f"{label}: {valid_links[label]}")
-                found_any = True
-        
-        if not found_any:
-            # Last ditch: show unverified links
-            for label in priority_order:
-                if links_to_check[label]:
-                    print(f"{label} (Unverified): {links_to_check[label]}")
-                    found_any = True
-                    break
                     
         print("-" * 40)
 
